@@ -1,0 +1,77 @@
+﻿@page "/"
+@rendermode InteractiveServer
+@using System;
+@using System.IO;
+@using System.Security.Cryptography.X509Certificates;
+@using System.Security.Cryptography
+@using iText.Commons.Bouncycastle.Cert
+@using iText.Commons.Bouncycastle.Crypto
+@using iText.Bouncycastle.Crypto
+@using iText.Bouncycastle.X509
+@using iText.Kernel.Crypto
+@using iText.Kernel.Pdf
+@using iText.Signatures
+@using iText.Kernel.Geom
+@using iText.Forms.Form.Element
+@using Org.BouncyCastle.Crypto
+@using Org.BouncyCastle.Security
+
+<PageTitle>Sign Document</PageTitle>
+
+<button class="btn btn-primary" @onclick="SignDocumentation">Sign Document</button>
+
+@code {
+    private int currentCount = 0;
+
+    private static string inputPdf = "P:/Path/To/document.pdf";
+    private static string outputPdf = "P:/Path/To/signed-document.pdf";
+    private static string certificatePath = "P:/Path/To/file.pfx";
+    private static string certificatePassword = "pass";
+
+    static void SignDocumentation()
+    {
+        // Załaduj certyfikat PFX
+        X509Certificate2 cert = new X509Certificate2(certificatePath, certificatePassword, X509KeyStorageFlags.Exportable);
+
+        // Pobierz klucz prywatny
+        RSA rsa = cert.GetRSAPrivateKey();
+        if (rsa == null)
+        {
+            return;
+        }
+
+        var keyPair = DotNetUtilities.GetKeyPair(rsa);
+        AsymmetricKeyParameter privateKeyParam = keyPair.Private;
+
+        // Konwersja certyfikatu do tablicy X509Certificate
+        var bcCert = DotNetUtilities.FromX509Certificate(cert);
+        IX509Certificate[] chain = { new X509CertificateBC(bcCert) };
+        IPrivateKey privateKey = new PrivateKeyBC(DotNetUtilities.GetKeyPair(rsa).Private);
+
+        using (PdfReader reader = new PdfReader(inputPdf))
+        using (PdfWriter writer = new PdfWriter(outputPdf))
+        {
+            PdfSigner signer = new PdfSigner(reader, writer, new StampingProperties().UseAppendMode());
+
+            // Zdefiniowanie rozmiaru strony
+            var firstPage = signer.GetDocument().GetFirstPage();
+            var pageSize = firstPage.GetPageSize();
+
+            // Ustawienie właściwości podpisu cyfrowego
+            // Ustaw nazwę pola podpisu – to tworzy widoczny obszar podpisu w formularzu PDF
+            signer.SetSignerProperties(new SignerProperties()
+                .SetSignatureAppearance(new SignatureFieldAppearance("Signature1")
+                .SetContent("Podpis cyfrowy\n" + DateTime.Now.ToString("yyyy.MM.dd HH:mm")))
+                .SetFieldName("Signature1")
+                .SetReason("Podpis cyfrowy")
+                .SetLocation("Gdańsk, Polska")
+                .SetPageRect(new Rectangle(pageSize.GetRight() - 240, pageSize.GetBottom(), 200, 100))
+                .SetPageNumber(1));
+
+            IExternalSignature pks = new PrivateKeySignature(privateKey, DigestAlgorithms.SHA256);
+            IExternalDigest digest = new BouncyCastleDigest();
+
+            signer.SignDetached(digest, pks, chain, null, null, null, 0, PdfSigner.CryptoStandard.CMS);
+        }
+    }
+}
