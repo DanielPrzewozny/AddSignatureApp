@@ -1,4 +1,4 @@
-﻿@page "/"
+@page "/"
 @rendermode InteractiveServer
 @using System;
 @using System.IO;
@@ -8,8 +8,11 @@
 @using iText.Commons.Bouncycastle.Crypto
 @using iText.Bouncycastle.Crypto
 @using iText.Bouncycastle.X509
+@using iText.Forms
+@using iText.Forms.Fields
 @using iText.Kernel.Crypto
 @using iText.Kernel.Pdf
+@using iText.Kernel.Pdf.Annot
 @using iText.Signatures
 @using iText.Kernel.Geom
 @using iText.Forms.Form.Element
@@ -18,15 +21,17 @@
 
 <PageTitle>Sign Document</PageTitle>
 
-<button class="btn btn-primary" @onclick="SignDocumentation">Sign Document</button>
+<button class="btn btn-primary" @onclick="SignDocumentation">Podpisz dokument</button>
+<button class="btn btn-primary" @onclick="AddSignatureField">Utwórz pole podpisu</button>
+
 
 @code {
     private int currentCount = 0;
 
-    private static string inputPdf = "P:/Path/To/document.pdf";
-    private static string outputPdf = "P:/Path/To/signed-document.pdf";
-    private static string certificatePath = "P:/Path/To/file.pfx";
-    private static string certificatePassword = "pass";
+    private static string inputPdf = "C:/Users/plk081284/Desktop/Podpis.pdf";
+    private static string outputPdf = "C:/Users/plk081284/Desktop/signed-document.pdf";
+    private static string certificatePath = "C:/Users/plk081284/AppData/Roaming/Adobe/Acrobat/DC/Security/DanielPrzewoźny.pfx";
+    private static string certificatePassword = "qwe123QWE!@#";
 
     static void SignDocumentation()
     {
@@ -65,13 +70,41 @@
                 .SetFieldName("Signature1")
                 .SetReason("Podpis cyfrowy")
                 .SetLocation("Gdańsk, Polska")
-                .SetPageRect(new Rectangle(pageSize.GetRight() - 240, pageSize.GetBottom(), 200, 100))
+                .SetPageRect(new Rectangle(pageSize.GetLeft() + 70, pageSize.GetTop()-300, 100, 50))
                 .SetPageNumber(1));
 
             IExternalSignature pks = new PrivateKeySignature(privateKey, DigestAlgorithms.SHA256);
             IExternalDigest digest = new BouncyCastleDigest();
 
             signer.SignDetached(digest, pks, chain, null, null, null, 0, PdfSigner.CryptoStandard.CMS);
+        }
+    }
+
+    static void AddSignatureField()
+    {
+        using (PdfReader reader = new PdfReader(inputPdf))
+        using (PdfWriter writer = new PdfWriter(outputPdf))
+        {
+            PdfDocument pdfDoc = new PdfDocument(reader, writer, new StampingProperties().UseAppendMode());
+            PdfPage page = pdfDoc.AddNewPage();
+
+            // Zdefiniowanie rozmiaru strony
+            //var firstPage = signer.GetDocument().GetFirstPage();
+            var pageSize = page.GetPageSize();
+            Rectangle rect = new Rectangle(pageSize.GetLeft() + 70, pageSize.GetTop() - 300, 100, 50);
+            var annotation = new PdfWidgetAnnotation(rect);
+            annotation.Put(PdfName.Type, PdfName.Annot); //Typ: Adnotacja
+            annotation.Put(PdfName.Subtype, PdfName.Widget);//Podtyp: widget
+            annotation.Put(PdfName.Rect, new PdfArray(rect)); //wymiary pola
+            annotation.Put(PdfName.FT, PdfName.Sig); //Typ: sygnatura
+            annotation.Put(PdfName.T, new PdfString("DigitalSignature")); //Nazwa pola
+            //PdfObject obj = annotation.GetPdfObject().Put(PdfName.Sig, PdfName.Sig);
+            var obj = annotation.MakeIndirect(pdfDoc);
+            
+            PdfFormField signatureField = PdfFormField.MakeFormField(obj.GetPdfObject(), pdfDoc);
+            signatureField.SetFieldName("signature");
+            PdfAcroForm form = PdfAcroForm.GetAcroForm(pdfDoc, true);
+            form.AddField(signatureField);
         }
     }
 }
