@@ -70,7 +70,7 @@
                 .SetFieldName("Signature1")
                 .SetReason("Podpis cyfrowy")
                 .SetLocation("Gdańsk, Polska")
-                .SetPageRect(new Rectangle(pageSize.GetLeft() + 70, pageSize.GetTop()-300, 100, 50))
+                .SetPageRect(new Rectangle(pageSize.GetLeft() + 70, pageSize.GetTop()-150, 100, 50))
                 .SetPageNumber(1));
 
             IExternalSignature pks = new PrivateKeySignature(privateKey, DigestAlgorithms.SHA256);
@@ -86,25 +86,30 @@
         using (PdfWriter writer = new PdfWriter(outputPdf))
         {
             PdfDocument pdfDoc = new PdfDocument(reader, writer, new StampingProperties().UseAppendMode());
-            PdfPage page = pdfDoc.AddNewPage();
+            PdfPage page = pdfDoc.GetFirstPage();
+            var pageSize = page.GetPageSize();
 
             // Zdefiniowanie rozmiaru strony
             //var firstPage = signer.GetDocument().GetFirstPage();
-            var pageSize = page.GetPageSize();
-            Rectangle rect = new Rectangle(pageSize.GetLeft() + 70, pageSize.GetTop() - 300, 100, 50);
+            Rectangle rect = new Rectangle(pageSize.GetLeft() + 70, pageSize.GetTop() - 150, 100, 50);
             var annotation = new PdfWidgetAnnotation(rect);
             annotation.Put(PdfName.Type, PdfName.Annot); //Typ: Adnotacja
             annotation.Put(PdfName.Subtype, PdfName.Widget);//Podtyp: widget
             annotation.Put(PdfName.Rect, new PdfArray(rect)); //wymiary pola
             annotation.Put(PdfName.FT, PdfName.Sig); //Typ: sygnatura
             annotation.Put(PdfName.T, new PdfString("DigitalSignature")); //Nazwa pola
+            annotation.Put(PdfName.DA, new PdfString("/Helv 14 Tf 0 g"));
             //PdfObject obj = annotation.GetPdfObject().Put(PdfName.Sig, PdfName.Sig);
             var obj = annotation.MakeIndirect(pdfDoc);
-            
+            page.AddAnnotation(annotation);
+
             PdfFormField signatureField = PdfFormField.MakeFormField(obj.GetPdfObject(), pdfDoc);
             signatureField.SetFieldName("signature");
+            signatureField.SetFontSize(12);
             PdfAcroForm form = PdfAcroForm.GetAcroForm(pdfDoc, true);
-            form.AddField(signatureField);
+            form.SetNeedAppearances(true);
+            form.AddField(signatureField, page);
+            pdfDoc.Close();
         }
     }
 }
