@@ -1,28 +1,22 @@
 @page "/"
-@rendermode InteractiveServer
-@using System;
-@using System.IO;
-@using System.Security.Cryptography.X509Certificates;
+@using System.Security.Cryptography.X509Certificates
 @using System.Security.Cryptography
-@using iText.Commons.Bouncycastle.Cert
-@using iText.Commons.Bouncycastle.Crypto
-@using iText.Bouncycastle.Crypto
-@using iText.Bouncycastle.X509
-@using iText.Forms
-@using iText.Forms.Fields
-@using iText.IO.Font.Constants
-@using iText.Kernel.Colors
-@using iText.Kernel.Crypto
-@using iText.Kernel.Font
-@using iText.Kernel.Pdf
-@using iText.Kernel.Pdf.Annot
-@using iText.Kernel.Pdf.Canvas
-@using iText.Layout
-@using iText.Signatures
-@using iText.Kernel.Geom
-@using iText.Forms.Form.Element
 @using Org.BouncyCastle.Crypto
 @using Org.BouncyCastle.Security
+@using iText.Bouncycastle.Crypto
+@using iText.Bouncycastle.X509
+@using iText.Commons.Bouncycastle.Cert
+@using iText.Commons.Bouncycastle.Crypto
+@using iText.Forms
+@using iText.Forms.Fields
+@using iText.Forms.Form.Element
+@using iText.Kernel.Crypto
+@using iText.Kernel.Geom
+@using iText.Kernel.Pdf
+@using iText.Kernel.Pdf.Annot
+@using iText.Signatures
+@rendermode InteractiveServer
+
 
 <PageTitle>Sign Document</PageTitle>
 
@@ -113,6 +107,7 @@
 
     static void SignDocumentInSpecificField()
     {
+        //W pierwszej kolejności należy zapisać dokument w acrobat readerze
         // Załaduj certyfikat PFX
         X509Certificate2 cert = new X509Certificate2(certificatePath, certificatePassword, X509KeyStorageFlags.Exportable);
 
@@ -151,6 +146,8 @@
             signer.SignDetached(digest, pks, chain, null, null, null, 0, PdfSigner.CryptoStandard.CMS);
 
             signer.GetDocument().Close();
+            reader.Close();
+            writer.Close();
         }
         File.Copy(tempFilePath, inputPdf, true);
         File.Delete(tempFilePath);
