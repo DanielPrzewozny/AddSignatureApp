@@ -10,9 +10,14 @@
 @using iText.Bouncycastle.X509
 @using iText.Forms
 @using iText.Forms.Fields
+@using iText.IO.Font.Constants
+@using iText.Kernel.Colors
 @using iText.Kernel.Crypto
+@using iText.Kernel.Font
 @using iText.Kernel.Pdf
 @using iText.Kernel.Pdf.Annot
+@using iText.Kernel.Pdf.Canvas
+@using iText.Layout
 @using iText.Signatures
 @using iText.Kernel.Geom
 @using iText.Forms.Form.Element
@@ -23,13 +28,32 @@
 
 <button class="btn btn-primary" @onclick="SignDocumentation">Podpisz dokument</button>
 <button class="btn btn-primary" @onclick="AddSignatureField">Utwórz pole podpisu</button>
+<select @bind="positionSelected">
+    @foreach (var item in positions.Keys)
+    {
+        <option value="@item">@item</option>
+    }
+</select>
+<input type="checkbox" @onclick="IsCheckedChanged" />
+<label>Dodaj do tego samego dokumentu</label>
 
 
 @code {
-    private int currentCount = 0;
+    private static int count = 0;
+    private static bool IsChecked { get; set; }
+    private static Dictionary<string, (float X, float Y)> positions = new Dictionary<string, (float X, float Y)>
+    {
+        { "Lewy górny róg", (70,692) },
+        { "Prawy górny róg", (420,692) },
+        { "Lewy dolny róg", (70,70) },
+        { "Prawy dolny róg", (432,70)},
+    };
+    private static string positionSelected = "Lewy górny róg";
 
+    private static string tempFilePath = System.IO.Path.GetTempFileName();
     private static string inputPdf = "C:/Users/plk081284/Desktop/Podpis.pdf";
     private static string outputPdf = "C:/Users/plk081284/Desktop/signed-document.pdf";
+    private static string generatedInputPdf = "";
     private static string certificatePath = "C:/Users/plk081284/AppData/Roaming/Adobe/Acrobat/DC/Security/DanielPrzewoźny.pfx";
     private static string certificatePassword = "qwe123QWE!@#";
 
@@ -70,7 +94,7 @@
                 .SetFieldName("Signature1")
                 .SetReason("Podpis cyfrowy")
                 .SetLocation("Gdańsk, Polska")
-                .SetPageRect(new Rectangle(pageSize.GetLeft() + 70, pageSize.GetTop()-150, 100, 50))
+                .SetPageRect(new Rectangle(pageSize.GetLeft() + 70, pageSize.GetTop() - 150, 100, 50))
                 .SetPageNumber(1));
 
             IExternalSignature pks = new PrivateKeySignature(privateKey, DigestAlgorithms.SHA256);
@@ -82,34 +106,107 @@
 
     static void AddSignatureField()
     {
+        if (IsChecked)
+        {
+            AddToTheSamePdfFile();
+        }
+        else
+        {
+            AddToNewPdfFile();
+        }
+    }
+
+    static void AddToNewPdfFile()
+    {
         using (PdfReader reader = new PdfReader(inputPdf))
         using (PdfWriter writer = new PdfWriter(outputPdf))
         {
             PdfDocument pdfDoc = new PdfDocument(reader, writer, new StampingProperties().UseAppendMode());
             PdfPage page = pdfDoc.GetFirstPage();
             var pageSize = page.GetPageSize();
-
-            // Zdefiniowanie rozmiaru strony
-            //var firstPage = signer.GetDocument().GetFirstPage();
-            Rectangle rect = new Rectangle(pageSize.GetLeft() + 70, pageSize.GetTop() - 150, 100, 50);
+            var signX = positions[positionSelected].X;
+            var signXtest = pageSize.GetRight() + 70;
+            var signY = positions[positionSelected].Y;
+            var signYtest = pageSize.GetTop() - 150;
+            var signDescritpion = "DigitalSignature" + count.ToString();
+            ++count;
+            Rectangle rect = new Rectangle(signX, signY, 100, 50);
             var annotation = new PdfWidgetAnnotation(rect);
             annotation.Put(PdfName.Type, PdfName.Annot); //Typ: Adnotacja
             annotation.Put(PdfName.Subtype, PdfName.Widget);//Podtyp: widget
             annotation.Put(PdfName.Rect, new PdfArray(rect)); //wymiary pola
             annotation.Put(PdfName.FT, PdfName.Sig); //Typ: sygnatura
-            annotation.Put(PdfName.T, new PdfString("DigitalSignature")); //Nazwa pola
-            annotation.Put(PdfName.DA, new PdfString("/Helv 14 Tf 0 g"));
-            //PdfObject obj = annotation.GetPdfObject().Put(PdfName.Sig, PdfName.Sig);
+            annotation.Put(PdfName.T, new PdfString(signDescritpion)); //Nazwa pola
+
+            PdfCanvas canvas = new PdfCanvas(page);
+            canvas.BeginText()
+                .SetFontAndSize(PdfFontFactory.CreateFont(StandardFonts.HELVETICA), 10)
+                .SetFillColor(ColorConstants.BLACK)
+                .MoveText(signX, signY + 20)
+                .ShowText(signDescritpion)
+                .EndText();
+
             var obj = annotation.MakeIndirect(pdfDoc);
             page.AddAnnotation(annotation);
 
             PdfFormField signatureField = PdfFormField.MakeFormField(obj.GetPdfObject(), pdfDoc);
-            signatureField.SetFieldName("signature");
+            signatureField.SetFieldName(signDescritpion);
             signatureField.SetFontSize(12);
             PdfAcroForm form = PdfAcroForm.GetAcroForm(pdfDoc, true);
             form.SetNeedAppearances(true);
             form.AddField(signatureField, page);
             pdfDoc.Close();
         }
+    }
+
+    static void AddToTheSamePdfFile()
+    {   
+        using (PdfReader reader = new PdfReader(inputPdf))
+        using (PdfWriter writer = new PdfWriter(tempFilePath))
+        using (PdfDocument pdfDoc = new PdfDocument(reader, writer))
+        {
+            PdfPage page = pdfDoc.GetFirstPage();
+            var pageSize = page.GetPageSize();
+            var signX = positions[positionSelected].X;
+            var signXtest = pageSize.GetRight() + 70;
+            var signY = positions[positionSelected].Y;
+            var signYtest = pageSize.GetTop() - 150;
+            var signDescritpion = "DigitalSignature" + count.ToString();
+            ++count;
+            Rectangle rect = new Rectangle(signX, signY, 100, 50);
+            var annotation = new PdfWidgetAnnotation(rect);
+            annotation.Put(PdfName.Type, PdfName.Annot); //Typ: Adnotacja
+            annotation.Put(PdfName.Subtype, PdfName.Widget);//Podtyp: widget
+            annotation.Put(PdfName.Rect, new PdfArray(rect)); //wymiary pola
+            annotation.Put(PdfName.FT, PdfName.Sig); //Typ: sygnatura
+            annotation.Put(PdfName.T, new PdfString(signDescritpion)); //Nazwa pola
+
+            PdfCanvas canvas = new PdfCanvas(page);
+            canvas.BeginText()
+                .SetFontAndSize(PdfFontFactory.CreateFont(StandardFonts.HELVETICA), 10)
+                .SetFillColor(ColorConstants.BLACK)
+                .MoveText(signX, signY + 20)
+                .ShowText(signDescritpion)
+                .EndText();
+
+            var obj = annotation.MakeIndirect(pdfDoc);
+            page.AddAnnotation(annotation);
+
+            PdfFormField signatureField = PdfFormField.MakeFormField(obj.GetPdfObject(), pdfDoc);
+            signatureField.SetFieldName(signDescritpion);
+            signatureField.SetFontSize(12);
+            PdfAcroForm form = PdfAcroForm.GetAcroForm(pdfDoc, true);
+            form.SetNeedAppearances(true);
+            form.AddField(signatureField, page);
+            pdfDoc.Close();
+        }
+        File.Copy(tempFilePath, inputPdf, true);
+        File.Delete(tempFilePath);
+    }
+
+    private static void IsCheckedChanged()
+    {
+        IsChecked = !IsChecked;
+        count = 0;
     }
 }
