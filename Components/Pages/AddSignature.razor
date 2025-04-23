@@ -26,7 +26,12 @@
 
 <PageTitle>Sign Document</PageTitle>
 
-<button class="btn btn-primary" @onclick="SignDocumentation">Podpisz dokument</button>
+
+<button class="btn btn-primary" @onclick="SignDocumentInSpecificField">Podpisz dokument</button>
+
+<label>Pole nr:</label>
+<input type="number" step="1" min="0" max="3" @bind="signFieldNumber" />
+
 <button class="btn btn-primary" @onclick="AddSignatureField">Utwórz pole podpisu</button>
 <select @bind="positionSelected">
     @foreach (var item in positions.Keys)
@@ -40,6 +45,7 @@
 
 @code {
     private static int count = 0;
+    private static int signFieldNumber = 0;
     private static bool IsChecked { get; set; }
     private static Dictionary<string, (float X, float Y)> positions = new Dictionary<string, (float X, float Y)>
     {
@@ -57,7 +63,7 @@
     private static string certificatePath = "C:/Users/plk081284/AppData/Roaming/Adobe/Acrobat/DC/Security/DanielPrzewoźny.pfx";
     private static string certificatePassword = "qwe123QWE!@#";
 
-    static void SignDocumentation()
+    static void SignDocument()
     {
         // Załaduj certyfikat PFX
         X509Certificate2 cert = new X509Certificate2(certificatePath, certificatePassword, X509KeyStorageFlags.Exportable);
@@ -89,13 +95,14 @@
             // Ustawienie właściwości podpisu cyfrowego
             // Ustaw nazwę pola podpisu – to tworzy widoczny obszar podpisu w formularzu PDF
             signer.SetSignerProperties(new SignerProperties()
-                .SetSignatureAppearance(new SignatureFieldAppearance("Signature1")
+                .SetSignatureAppearance(new SignatureFieldAppearance("DigitalSignature3")
                 .SetContent("Podpis cyfrowy\n" + DateTime.Now.ToString("yyyy.MM.dd HH:mm")))
-                .SetFieldName("Signature1")
+                .SetFieldName("DigitalSignature3")
                 .SetReason("Podpis cyfrowy")
                 .SetLocation("Gdańsk, Polska")
                 .SetPageRect(new Rectangle(pageSize.GetLeft() + 70, pageSize.GetTop() - 150, 100, 50))
-                .SetPageNumber(1));
+                .SetPageNumber(1)
+                );
 
             IExternalSignature pks = new PrivateKeySignature(privateKey, DigestAlgorithms.SHA256);
             IExternalDigest digest = new BouncyCastleDigest();
@@ -104,16 +111,49 @@
         }
     }
 
-    static void AddSignatureField()
+    static void SignDocumentInSpecificField()
     {
-        if (IsChecked)
+        // Załaduj certyfikat PFX
+        X509Certificate2 cert = new X509Certificate2(certificatePath, certificatePassword, X509KeyStorageFlags.Exportable);
+
+        // Pobierz klucz prywatny
+        RSA rsa = cert.GetRSAPrivateKey();
+        if (rsa == null)
         {
-            AddToTheSamePdfFile();
+            return;
         }
-        else
+
+        var keyPair = DotNetUtilities.GetKeyPair(rsa);
+        AsymmetricKeyParameter privateKeyParam = keyPair.Private;
+
+        // Konwersja certyfikatu do tablicy X509Certificate
+        var bcCert = DotNetUtilities.FromX509Certificate(cert);
+        IX509Certificate[] chain = { new X509CertificateBC(bcCert) };
+        IPrivateKey privateKey = new PrivateKeyBC(DotNetUtilities.GetKeyPair(rsa).Private);
+
+        using (PdfReader reader = new PdfReader(inputPdf))
+        using (PdfWriter writer = new PdfWriter(tempFilePath))
         {
-            AddToNewPdfFile();
+            PdfSigner signer = new PdfSigner(reader, writer, new StampingProperties().UseAppendMode());
+
+            // Zdefiniowanie rozmiaru strony
+            var firstPage = signer.GetDocument().GetFirstPage();
+            var pageSize = firstPage.GetPageSize();
+
+            signer.SetSignerProperties(new SignerProperties().SetFieldName("DigitalSignature" + signFieldNumber.ToString())
+            .SetSignatureAppearance(new SignatureFieldAppearance("DigitalSignature" + signFieldNumber.ToString())
+                 .SetContent("Podpis cyfrowy\n" + DateTime.Now.ToString("yyyy.MM.dd HH:mm"))))
+            .GetSignatureField();
+
+            IExternalSignature pks = new PrivateKeySignature(privateKey, DigestAlgorithms.SHA256);
+            IExternalDigest digest = new BouncyCastleDigest();
+
+            signer.SignDetached(digest, pks, chain, null, null, null, 0, PdfSigner.CryptoStandard.CMS);
+
+            signer.GetDocument().Close();
         }
+        File.Copy(tempFilePath, inputPdf, true);
+        File.Delete(tempFilePath);
     }
 
     static void AddToNewPdfFile()
@@ -138,20 +178,19 @@
             annotation.Put(PdfName.FT, PdfName.Sig); //Typ: sygnatura
             annotation.Put(PdfName.T, new PdfString(signDescritpion)); //Nazwa pola
 
-            PdfCanvas canvas = new PdfCanvas(page);
-            canvas.BeginText()
-                .SetFontAndSize(PdfFontFactory.CreateFont(StandardFonts.HELVETICA), 10)
-                .SetFillColor(ColorConstants.BLACK)
-                .MoveText(signX, signY + 20)
-                .ShowText(signDescritpion)
-                .EndText();
+            // PdfCanvas canvas = new PdfCanvas(page);
+            // canvas.BeginText()
+            //     .SetFontAndSize(PdfFontFactory.CreateFont(StandardFonts.HELVETICA), 10)
+            //     .SetFillColor(ColorConstants.BLACK)
+            //     .MoveText(signX, signY + 20)
+            //     .ShowText(signDescritpion)
+            //     .EndText();
 
             var obj = annotation.MakeIndirect(pdfDoc);
             page.AddAnnotation(annotation);
 
             PdfFormField signatureField = PdfFormField.MakeFormField(obj.GetPdfObject(), pdfDoc);
             signatureField.SetFieldName(signDescritpion);
-            signatureField.SetFontSize(12);
             PdfAcroForm form = PdfAcroForm.GetAcroForm(pdfDoc, true);
             form.SetNeedAppearances(true);
             form.AddField(signatureField, page);
@@ -181,24 +220,26 @@
             annotation.Put(PdfName.FT, PdfName.Sig); //Typ: sygnatura
             annotation.Put(PdfName.T, new PdfString(signDescritpion)); //Nazwa pola
 
-            PdfCanvas canvas = new PdfCanvas(page);
-            canvas.BeginText()
-                .SetFontAndSize(PdfFontFactory.CreateFont(StandardFonts.HELVETICA), 10)
-                .SetFillColor(ColorConstants.BLACK)
-                .MoveText(signX, signY + 20)
-                .ShowText(signDescritpion)
-                .EndText();
+            // PdfCanvas canvas = new PdfCanvas(page);
+            // canvas.BeginText()
+            //     .SetFontAndSize(PdfFontFactory.CreateFont(StandardFonts.HELVETICA), 10)
+            //     .SetFillColor(ColorConstants.BLACK)
+            //     .MoveText(signX, signY + 20)
+            //     .ShowText(signDescritpion)
+            //     .EndText();
 
             var obj = annotation.MakeIndirect(pdfDoc);
             page.AddAnnotation(annotation);
 
             PdfFormField signatureField = PdfFormField.MakeFormField(obj.GetPdfObject(), pdfDoc);
             signatureField.SetFieldName(signDescritpion);
-            signatureField.SetFontSize(12);
             PdfAcroForm form = PdfAcroForm.GetAcroForm(pdfDoc, true);
+
             form.SetNeedAppearances(true);
             form.AddField(signatureField, page);
             pdfDoc.Close();
+            writer.Close();
+            reader.Close();
         }
         File.Copy(tempFilePath, inputPdf, true);
         File.Delete(tempFilePath);
@@ -208,5 +249,17 @@
     {
         IsChecked = !IsChecked;
         count = 0;
+    }
+
+    private static void AddSignatureField()
+    {
+        if (IsChecked)
+        {
+            AddToTheSamePdfFile();
+        }
+        else
+        {
+            AddToNewPdfFile();
+        }
     }
 }
